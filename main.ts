@@ -5,7 +5,9 @@
 // off on vacation, to /output/entry.txt. Node 22, standard library only.
 // No network access, no randomness, no clock reads, no environment input
 // beyond the output-directory override below: the same program always
-// writes the same bytes, so repeated runs agree byte for byte.
+// writes the same bytes, so repeated runs agree byte for byte. After
+// writing, it reads the file back as raw bytes and compares them exactly
+// against the entry, so a re-encoded or altered file cannot slip through.
 //
 // Local check (outside the grader container), where MAKEFUN_OUTPUT_DIR
 // stands in for /output:
@@ -65,28 +67,33 @@ try {
   abort("cannot write " + destPath + ": " + err.message);
 }
 
-let written;
+let writtenBytes;
 try {
-  written = readFileSync(destPath, "utf8");
+  // Read back as raw bytes, not a decoded string: a string comparison
+  // would silently accept a re-encoded file (a BOM, a substituted
+  // byte) that the gate would then read differently.
+  writtenBytes = readFileSync(destPath);
 } catch (err) {
   abort("cannot read back " + destPath + ": " + err.message);
 }
 
-if (written !== ENTRY) {
+const expectedBytes = Buffer.from(ENTRY, "utf8");
+if (!writtenBytes.equals(expectedBytes)) {
   abort("read-back bytes differ from the entry");
 }
+const written = writtenBytes.toString("utf8");
 if (charCount(written) !== chars) {
   abort("read-back character count changed: " + charCount(written));
 }
 
-const hash = createHash("sha256").update(written, "utf8").digest("hex");
+const hash = createHash("sha256").update(writtenBytes).digest("hex");
 process.stdout.write(
   "wrote " +
     destPath +
     " (" +
     chars +
     " characters, " +
-    Buffer.byteLength(written, "utf8") +
+    writtenBytes.length +
     " bytes, sha256 " +
     hash +
     ")\n",
